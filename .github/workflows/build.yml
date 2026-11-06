@@ -19,13 +19,22 @@ concurrency:
 
 jobs:
   plan:
-    runs-on: xcode-27
+    runs-on: macos-26
     outputs:
       ipa: ${{ steps.key.outputs.ipa }}
       reuse: ${{ steps.ipa.outputs.cache-hit }}
       sdk: ${{ steps.sdk.outputs.key }}
       ipaenv: ${{ steps.sdk.outputs.ipa }}
     steps:
+      # Fork test build: GitHub's own Macs instead of the Madeira team's xcode-27 machine.
+      # Use the newest Xcode installed on the runner (the app needs the iOS 26 SDK or newer).
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
       - uses: actions/checkout@v4
       - name: Check build reuse rules
         run: |
@@ -54,11 +63,20 @@ jobs:
   reuse:
     needs: plan
     if: needs.plan.outputs.reuse == 'true'
-    runs-on: xcode-27
+    runs-on: macos-26
     env:
       MADEIRA_PLANNED_SDK: ${{ needs.plan.outputs.sdk }}
       MADEIRA_RUNTIME_SDK: ${{ needs.plan.outputs.sdk }}
     steps:
+      # Fork test build: GitHub's own Macs instead of the Madeira team's xcode-27 machine.
+      # Use the newest Xcode installed on the runner (the app needs the iOS 26 SDK or newer).
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
       - uses: actions/checkout@v4
       - id: sdk
         run: bash tools/build/ci-input-key.sh
@@ -83,11 +101,20 @@ jobs:
   llvm:
     needs: plan
     if: needs.plan.outputs.reuse != 'true'
-    runs-on: xcode-27
+    runs-on: macos-26
     env:
       MADEIRA_PLANNED_SDK: ${{ needs.plan.outputs.sdk }}
     timeout-minutes: 360
     steps:
+      # Fork test build: GitHub's own Macs instead of the Madeira team's xcode-27 machine.
+      # Use the newest Xcode installed on the runner (the app needs the iOS 26 SDK or newer).
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
       - uses: actions/checkout@v4
       - id: sdk
         run: bash tools/build/ci-input-key.sh
@@ -123,13 +150,22 @@ jobs:
   fex:
     needs: plan
     if: needs.plan.outputs.reuse != 'true'
-    runs-on: xcode-27
+    runs-on: macos-26
     env:
       MADEIRA_PLANNED_SDK: ${{ needs.plan.outputs.sdk }}
     timeout-minutes: 360
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
+      # Fork test build: GitHub's own Macs instead of the Madeira team's xcode-27 machine.
+      # Use the newest Xcode installed on the runner (the app needs the iOS 26 SDK or newer).
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
       - uses: actions/checkout@v4
       - id: sdk
         run: bash tools/build/ci-input-key.sh
@@ -163,13 +199,22 @@ jobs:
   i386:
     needs: plan
     if: needs.plan.outputs.reuse != 'true'
-    runs-on: xcode-27
+    runs-on: macos-26
     env:
       MADEIRA_PLANNED_SDK: ${{ needs.plan.outputs.sdk }}
     timeout-minutes: 360
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
+      # Fork test build: GitHub's own Macs instead of the Madeira team's xcode-27 machine.
+      # Use the newest Xcode installed on the runner (the app needs the iOS 26 SDK or newer).
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
       - uses: actions/checkout@v4
       - id: sdk
         run: bash tools/build/ci-input-key.sh
@@ -213,7 +258,7 @@ jobs:
   runtime:
     needs: [plan, llvm]
     if: needs.plan.outputs.reuse != 'true'
-    runs-on: xcode-27
+    runs-on: macos-26
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -224,6 +269,15 @@ jobs:
       MADEIRA_RUNTIME_SDK: ${{ needs.plan.outputs.sdk }}
       MADEIRA_RUNTIME_REUSE: '1'
     steps:
+      # Fork test build: GitHub's own Macs instead of the Madeira team's xcode-27 machine.
+      # Use the newest Xcode installed on the runner (the app needs the iOS 26 SDK or newer).
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
       - uses: actions/checkout@v4
       - id: sdk
         run: bash tools/build/ci-input-key.sh
@@ -258,7 +312,7 @@ jobs:
   app:
     needs: [plan, llvm, fex, i386, runtime]
     if: needs.plan.outputs.reuse != 'true'
-    runs-on: xcode-27
+    runs-on: macos-26
     env:
       MADEIRA_PLANNED_SDK: ${{ needs.plan.outputs.sdk }}
       MADEIRA_PLANNED_IPA: ${{ needs.plan.outputs.ipaenv }}
@@ -266,6 +320,15 @@ jobs:
       MADEIRA_RUNTIME_REUSE: '1'
     timeout-minutes: 360
     steps:
+      # Fork test build: GitHub's own Macs instead of the Madeira team's xcode-27 machine.
+      # Use the newest Xcode installed on the runner (the app needs the iOS 26 SDK or newer).
+      - name: Select newest Xcode
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -393,6 +456,9 @@ jobs:
           pattern: runtime-*
           path: .runtime-cache
           merge-multiple: true
+      # Fork test build: the LiveContainer wineserver fix (ported from BCD 0.1.630).
+      - name: Apply the LiveContainer fix
+        run: git apply --verbose madeira-livecontainer-bind-fix.patch
       - name: Build IPA
         run: tools/build-ipa.sh
       - uses: actions/cache/save@v4
