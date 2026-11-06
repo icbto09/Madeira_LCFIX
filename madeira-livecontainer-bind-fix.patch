@@ -1,0 +1,93 @@
+diff --git a/app/Madeira/WineServerBridge.m b/app/Madeira/WineServerBridge.m
+index 7e10ca0..7b6d1c5 100644
+--- a/app/Madeira/WineServerBridge.m
++++ b/app/Madeira/WineServerBridge.m
+@@ -47,6 +47,8 @@ extern void wineserver_log_set_file(const char *path);
+ // Set NLS directory for wineserver (defined in unicode_ios.c)
+ extern void wineserver_set_nls_dir(const char *path);
+ 
++static volatile int g_wineserver_running = 0;
++
+ // Override wineserver's fatal_error to use logging and pthread_exit instead of exit(1)
+ void fatal_error( const char *err, ... ) {
+     va_list args;
+@@ -55,6 +57,9 @@ void fatal_error( const char *err, ... ) {
+     vsnprintf(buf, sizeof(buf), err, args);
+     va_end(args);
+     wine_log_msg_impl("[Wine] FATAL: %s", buf);
++    // The server thread ends here, so it is no longer running. Without this, wineserver_is_running()
++    // kept answering 1 and the launch waited 2 s, then started Wine against a dead server (black screen).
++    g_wineserver_running = 0;
+     // Don't call exit(1) — that kills the whole app.
+     // Instead, terminate just this thread.
+     pthread_exit(NULL);
+@@ -68,7 +73,6 @@ extern int debug_level;
+ volatile int g_wineserver_should_stop = 0;
+ 
+ static pthread_t g_wineserver_thread;
+-static volatile int g_wineserver_running = 0;
+ static char *g_prefix_path = NULL;
+ 
+ static void *wineserver_thread_func(void *arg) {
+diff --git a/build/wineserver/request_ios.c b/build/wineserver/request_ios.c
+index 1ba6249..d3cf6d7 100644
+--- a/build/wineserver/request_ios.c
++++ b/build/wineserver/request_ios.c
+@@ -1318,7 +1318,8 @@ static void acquire_lock(void)
+ #endif
+     if (bind( fd, (struct sockaddr *)&addr, slen ) == -1)
+     {
+-        if ((errno == EEXIST) || (errno == EADDRINUSE))
++        int bind_errno = errno;
++        if ((bind_errno == EEXIST) || (bind_errno == EADDRINUSE))
+         {
+             if (got_lock)
+                 fatal_error( "couldn't bind to the socket even though we hold the lock\n" );
+@@ -1328,8 +1329,46 @@ static void acquire_lock(void)
+             exit(2); /* we didn't get the lock, exit with special status */
+ #endif
+         }
+-        fatal_error( "bind: %s\n", strerror( errno ));
++#ifdef WINE_IOS
++        /* Inside LiveContainer, iOS refuses to create the Unix socket ("[Wine] FATAL: bind: Operation not
++         * permitted"); the server thread then ended and the game hung on a black screen. Ported from BCD
++         * 0.1.630 (thebcd69/bcd-games, round 624, GPL-3.0-or-later). The socket name is relative to the
++         * working directory, which another thread may have changed: if we are not in the server directory,
++         * go back and try once more. If that fails too, carry on without the master socket: no client
++         * connects through it (the first Wine process and every child get a socketpair, see
++         * WineProcessBridge.m), and close_master_socket() is NULL-safe. */
++        {
++            char cwd[1024];
++            struct stat here, dir;
++            int same = 0, retried = 0;
++
++            if (!getcwd( cwd, sizeof(cwd) )) strcpy( cwd, "(getcwd failed)" );
++            same = server_dir_fd != -1 && stat( ".", &here ) == 0 && fstat( server_dir_fd, &dir ) == 0 &&
++                   here.st_ino == dir.st_ino && here.st_dev == dir.st_dev;
++            ws_log( "[wineserver] bind(%s) failed errno=%d (%s): cwd=%s server_dir=%s same-dir=%d access-w=%d got_lock=%d",
++                    server_socket_name, bind_errno, strerror( bind_errno ), cwd, server_dir, same, access( ".", W_OK ) == 0, got_lock );
++            if (!same && got_lock && server_dir_fd != -1 && fchdir( server_dir_fd ) == 0)
++            {
++                retried = 1;
++                unlink( server_socket_name );
++                if (bind( fd, (struct sockaddr *)&addr, slen ) != -1)
++                {
++                    ws_log( "[wineserver] bind(%s) succeeded in the server directory", server_socket_name );
++                    goto ios_bound;
++                }
++                bind_errno = errno;
++            }
++            ws_log( "[wineserver] %s (errno=%d); continuing without the master socket (clients connect through socketpairs)",
++                    retried ? "the retry in the server directory failed too" : "no retry", bind_errno );
++        }
++        close( fd );
++        return;
++#endif
++        fatal_error( "bind: %s\n", strerror( bind_errno ));
+     }
++#ifdef WINE_IOS
++ios_bound:
++#endif
+     atexit( socket_cleanup );
+     chmod( server_socket_name, 0600 );  /* make sure no other user can connect */
+     if (listen( fd, 5 ) == -1) fatal_error( "listen: %s\n", strerror( errno ));
